@@ -102,6 +102,48 @@
                     withContext:(NSManagedObjectContext *)context
                           error:(NSError *__autoreleasing *)error;
 
+/**
+ Creates `AFHTTPRequestOperation` objects for each of the managed objects specified for insert.
+ 
+ @discussion Each object may not correlate to an operation depending on the circumstances of the
+  `HTTPClient` delegate.
+
+ @param insertedObjects The managed objects inserted into the context
+ @param context         The current context executing the save
+ 
+ @return An array of `AFHTTPRequestOperations` to run
+ */
+- (NSArray *)operationsForInsertedObjects:(NSSet *)insertedObjects
+                              withContext:(NSManagedObjectContext *)context;
+
+/**
+ Creates `AFHTTPRequestOperation` objects for each of the managed objects specified for update.
+
+ @discussion Each object may not correlate to an operation depending on the circumstances of the
+ `HTTPClient` delegate.
+
+ @param insertedObjects The managed objects updated in the context
+ @param context         The current context executing the save
+
+ @return An array of `AFHTTPRequestOperations` to run
+ */
+- (NSArray *)operationsForUpdatedObjects:(NSSet *)updatedObjects
+                             withContext:(NSManagedObjectContext *)context;
+
+/**
+ Creates `AFHTTPRequestOperation` objects for each of the managed objects specified for deletion.
+
+ @discussion Each object may not correlate to an operation depending on the circumstances of the
+ `HTTPClient` delegate.
+
+ @param insertedObjects The managed objects deleted from the context
+ @param context         The current context executing the save
+
+ @return An array of `AFHTTPRequestOperations` to run
+ */
+- (NSArray *)operationsForDeletedObjects:(NSSet *)deletedObjects
+                             withContext:(NSManagedObjectContext *)context;
+
 @end
 
 #pragma mark -
