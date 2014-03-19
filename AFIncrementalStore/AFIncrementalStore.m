@@ -497,10 +497,36 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                           error:(NSError *__autoreleasing *)error
 {
     NSMutableArray *mutableOperations = [NSMutableArray array];
+
+    [mutableOperations addObjectsFromArray:[self operationsForInsertedObjects:[saveChangesRequest insertedObjects]
+                                                                 withContext:context]];
+
+    [mutableOperations addObjectsFromArray:[self operationsForUpdatedObjects:[saveChangesRequest updatedObjects]
+                                                                 withContext:context]];
+
+    [mutableOperations addObjectsFromArray:[self operationsForDeletedObjects:[saveChangesRequest deletedObjects]
+                                                                 withContext:context]];
+
+    // NSManagedObjectContext removes object references from an NSSaveChangesRequest as each object is saved, so create a copy of the original in order to send useful information in AFIncrementalStoreContextDidSaveRemoteValues notification.
+    NSSaveChangesRequest *saveChangesRequestCopy = [[NSSaveChangesRequest alloc] initWithInsertedObjects:[saveChangesRequest.insertedObjects copy] updatedObjects:[saveChangesRequest.updatedObjects copy] deletedObjects:[saveChangesRequest.deletedObjects copy] lockedObjects:[saveChangesRequest.lockedObjects copy]];
+
+    [self notifyManagedObjectContext:context aboutRequestOperations:mutableOperations forSaveChangesRequest:saveChangesRequestCopy];
+
+    [self.HTTPClient enqueueBatchOfHTTPRequestOperations:mutableOperations progressBlock:nil completionBlock:^(NSArray *operations) {
+        [self notifyManagedObjectContext:context aboutRequestOperations:operations forSaveChangesRequest:saveChangesRequestCopy];
+    }];
+
+    return [NSArray array];
+}
+
+- (NSArray *)operationsForInsertedObjects:(NSSet *)insertedObjects
+                              withContext:(NSManagedObjectContext *)context
+{
+    NSMutableArray *mutableOperations = [NSMutableArray array];
     NSManagedObjectContext *backingContext = [self backingManagedObjectContext];
 
     if ([self.HTTPClient respondsToSelector:@selector(requestForInsertedObject:)]) {
-        for (NSManagedObject *insertedObject in [saveChangesRequest insertedObjects]) {
+        for (NSManagedObject *insertedObject in insertedObjects) {
             NSURLRequest *request = [self.HTTPClient requestForInsertedObject:insertedObject];
             if (!request) {
                 [backingContext performBlockAndWait:^{
@@ -556,7 +582,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                     [context refreshObject:insertedObject mergeChanges:NO];
                 }
             } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
-				 NSLog(@"Insert Error: %@", error);
+                NSLog(@"Insert Error: %@", error);
 
 				// Reset destination objects to prevent dangling relationships
 				for (NSRelationshipDescription *relationship in [insertedObject.entity.relationshipsByName allValues]) {
@@ -579,13 +605,22 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
 					}
 				}
             }];
-
+            
             [mutableOperations addObject:operation];
         }
     }
 
+    return [NSArray arrayWithArray:mutableOperations];
+}
+
+- (NSArray *)operationsForUpdatedObjects:(NSSet *)updatedObjects
+                             withContext:(NSManagedObjectContext *)context
+{
+    NSMutableArray *mutableOperations = [NSMutableArray array];
+    NSManagedObjectContext *backingContext = [self backingManagedObjectContext];
+
     if ([self.HTTPClient respondsToSelector:@selector(requestForUpdatedObject:)]) {
-        for (NSManagedObject *updatedObject in [saveChangesRequest updatedObjects]) {
+        for (NSManagedObject *updatedObject in updatedObjects) {
             NSManagedObjectID *backingObjectID = [self objectIDForBackingObjectForEntity:[updatedObject entity] withResourceIdentifier:AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:updatedObject.objectID])];
 
             NSURLRequest *request = [self.HTTPClient requestForUpdatedObject:updatedObject];
@@ -621,8 +656,17 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
         }
     }
 
+    return [NSArray arrayWithArray:mutableOperations];
+}
+
+- (NSArray *)operationsForDeletedObjects:(NSSet *)deletedObjects
+                             withContext:(NSManagedObjectContext *)context
+{
+    NSMutableArray *mutableOperations = [NSMutableArray array];
+    NSManagedObjectContext *backingContext = [self backingManagedObjectContext];
+
     if ([self.HTTPClient respondsToSelector:@selector(requestForDeletedObject:)]) {
-        for (NSManagedObject *deletedObject in [saveChangesRequest deletedObjects]) {
+        for (NSManagedObject *deletedObject in deletedObjects) {
             NSManagedObjectID *backingObjectID = [self objectIDForBackingObjectForEntity:[deletedObject entity] withResourceIdentifier:AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:deletedObject.objectID])];
 
             NSURLRequest *request = [self.HTTPClient requestForDeletedObject:deletedObject];
@@ -649,16 +693,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
         }
     }
 
-    // NSManagedObjectContext removes object references from an NSSaveChangesRequest as each object is saved, so create a copy of the original in order to send useful information in AFIncrementalStoreContextDidSaveRemoteValues notification.
-    NSSaveChangesRequest *saveChangesRequestCopy = [[NSSaveChangesRequest alloc] initWithInsertedObjects:[saveChangesRequest.insertedObjects copy] updatedObjects:[saveChangesRequest.updatedObjects copy] deletedObjects:[saveChangesRequest.deletedObjects copy] lockedObjects:[saveChangesRequest.lockedObjects copy]];
-
-    [self notifyManagedObjectContext:context aboutRequestOperations:mutableOperations forSaveChangesRequest:saveChangesRequestCopy];
-
-    [self.HTTPClient enqueueBatchOfHTTPRequestOperations:mutableOperations progressBlock:nil completionBlock:^(NSArray *operations) {
-        [self notifyManagedObjectContext:context aboutRequestOperations:operations forSaveChangesRequest:saveChangesRequestCopy];
-    }];
-
-    return [NSArray array];
+    return [NSArray arrayWithArray:mutableOperations];
 }
 
 #pragma mark - NSIncrementalStore
